@@ -1,6 +1,6 @@
 import { useGSAP } from "@gsap/react";
-import { useRef } from "react";
-import gsap, { SplitText } from 'gsap/all';
+import { useRef, useState, useEffect } from "react";
+import gsap, { SplitText, ScrollTrigger } from "gsap/all";
 
 // Define the shape of the collection array
 interface CollectionItem {
@@ -10,19 +10,19 @@ interface CollectionItem {
 
 // Placeholder collection array (replace with your actual data)
 const collection: CollectionItem[] = [
-  { img: './images/img1.jpeg', title: 'Image 1' },
-  { img: './images/img2.jpeg', title: 'Image 2' },
-  { img: './images/img3.jpeg', title: 'Image 3' },
-  { img: './images/img4.jpeg', title: 'Image 4' },
-  { img: './images/img5.jpeg', title: 'Image 5' },
-  { img: './images/img6.jpeg', title: 'Image 6' },
-  { img: './images/img7.jpeg', title: 'Image 7' },
-  { img: './images/img8.jpeg', title: 'Image 8' },
-  { img: './images/img9.jpeg', title: 'Image 9' },
-  { img: './images/img10.jpeg', title: 'Image 10' },
-  { img: './images/img11.jpeg', title: 'Image 11' },
-  { img: './images/img12.jpeg', title: 'Image 12' },
-  { img: './images/img13.jpeg', title: 'Image 12' },
+  { img: "./images/img1.jpeg", title: "Image 1" },
+  { img: "./images/img2.jpeg", title: "Image 2" },
+  { img: "./images/img3.jpeg", title: "Image 3" },
+  { img: "./images/img4.jpeg", title: "Image 4" },
+  { img: "./images/img5.jpeg", title: "Image 5" },
+  { img: "./images/img6.jpeg", title: "Image 6" },
+  { img: "./images/img7.jpeg", title: "Image 7" },
+  { img: "./images/img8.jpeg", title: "Image 8" },
+  { img: "./images/img9.jpeg", title: "Image 9" },
+  { img: "./images/img10.jpeg", title: "Image 10" },
+  { img: "./images/img11.jpeg", title: "Image 11" },
+  { img: "./images/img12.jpeg", title: "Image 12" },
+  { img: "./images/img13.jpeg", title: "Image 13" },
 ];
 
 // Define the shape of transformState objects
@@ -65,8 +65,34 @@ const CircularImagesAnimation: React.FC = () => {
   const titleContainerRef = useRef<HTMLDivElement | null>(null);
   const clickToViewRef = useRef<HTMLDivElement | null>(null);
 
+  // State to manage config and isMobile
+  const [config, setConfig] = useState<Config>({
+    imageCount: 13,
+    radius: 275,
+    sensitivity: 500,
+    effectFalloff: 250,
+    cardMoveAmount: 50,
+    lerpFactor: 0.15,
+    isMobile: window.innerWidth < 1000,
+  });
+
+  // Update isMobile and adjust radius on resize
+  useEffect(() => {
+    const handleResize = () => {
+      setConfig((prev) => ({
+        ...prev,
+        isMobile: window.innerWidth < 1000,
+        radius: window.innerWidth < 1000 ? 150 : 275, // Ensure 275 for desktop
+      }));
+    };
+    window.addEventListener("resize", handleResize);
+    handleResize(); // Initial call
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   useGSAP(() => {
     gsap.registerPlugin(SplitText);
+    gsap.registerPlugin(ScrollTrigger);
 
     const gallery = galleryRef.current;
     const galleryContainer = galleryContainerRef.current;
@@ -81,16 +107,7 @@ const CircularImagesAnimation: React.FC = () => {
     let currentTitle: HTMLParagraphElement | null = null;
     let isPreviewActive: boolean = false;
     let isTransitioning: boolean = false;
-
-    const config: Config = {
-      imageCount: 13,
-      radius: 275,
-      sensitivity: 500,
-      effectFalloff: 250,
-      cardMoveAmount: 50,
-      lerpFactor: 0.15,
-      isMobile: window.innerWidth < 1000,
-    };
+    let isScrolling: boolean = false; // Flag to track scrolling state
 
     const parallaxState: ParallaxState = {
       targetX: 0,
@@ -104,29 +121,33 @@ const CircularImagesAnimation: React.FC = () => {
     // Initially hide "Click to View"
     gsap.set(clickToView, { opacity: 0, y: 0 });
 
-    // Create cards
+    // Create cards with image load check
     for (let i = 0; i < config.imageCount; i++) {
       const angle = (i / config.imageCount) * Math.PI * 2;
       const cardIndex = i % collection.length;
 
-      const card = document.createElement('div');
-      card.className = 'card';
+      const card = document.createElement("div");
+      card.className = "card";
       card.dataset.index = i.toString();
       card.dataset.title = collection[cardIndex].title;
 
-      const img = document.createElement('img');
+      const img = document.createElement("img");
       img.src = collection[cardIndex].img;
+      img.onload = () => gsap.set(card, { opacity: 1 }); // Ensure image loads before showing
       card.appendChild(img);
 
-      // Initially set cards to random positions for shuffle effect
+      // Limit random positioning within viewport
+      const maxX = config.isMobile ? window.innerWidth / 2 : window.innerWidth / 2;
+      const maxY = config.isMobile ? window.innerHeight / 2 : window.innerHeight / 2;
+
       gsap.set(card, {
-        x: gsap.utils.random(-window.innerWidth / 2, window.innerWidth / 2),
-        y: gsap.utils.random(-window.innerHeight / 2, window.innerHeight / 2),
+        x: gsap.utils.random(-maxX, maxX),
+        y: gsap.utils.random(-maxY, maxY),
         rotation: gsap.utils.random(0, 360),
         scale: 0.5,
-        opacity: 0,
-        transformPerspective: 800,
-        transformOrigin: 'center center',
+        opacity: 0, // Start hidden until image loads
+        transformPerspective: config.isMobile ? 500 : 800,
+        transformOrigin: "center center",
       });
 
       gallery.appendChild(card);
@@ -143,8 +164,8 @@ const CircularImagesAnimation: React.FC = () => {
         angle,
       });
 
-      card.addEventListener('click', (e: MouseEvent) => {
-        if (!isTransitioning) {
+      card.addEventListener("click", (e: MouseEvent) => {
+        if (!isTransitioning && !isScrolling) {
           togglePreview(parseInt(card.dataset.index!));
           e.stopPropagation();
         }
@@ -164,42 +185,111 @@ const CircularImagesAnimation: React.FC = () => {
       scale: 1,
       duration: 0.5,
       stagger: 0.05,
-      ease: 'power2.out',
+      ease: "power2.out",
     });
 
     // Step 2: Move to horizontal line
-    tl.to(cards, {
-      x: (index: number) => (index - config.imageCount / 2) * 100,
-      y: 0,
-      rotation: 0,
-      duration: 1,
-      ease: 'power3.inOut',
-    }, "-=0.3");
+    tl.to(
+      cards,
+      {
+        x: (index: number) => (index - config.imageCount / 2) * 100,
+        y: 0,
+        rotation: 0,
+        duration: 1,
+        ease: "power3.inOut",
+      },
+      "-=0.3"
+    );
 
-    // Step 3: Transition to circular layout
+    // Step 3: Transition to circular layout with stagger
     tl.to(cards, {
-      x: (index: number) => config.radius * Math.cos(transformState[index].angle),
-      y: (index: number) => config.radius * Math.sin(transformState[index].angle),
-      rotation: (index: number) => (transformState[index].angle * 180) / Math.PI + 90,
+      x: (index: number) =>
+        config.radius * Math.cos(transformState[index].angle),
+      y: (index: number) =>
+        config.radius * Math.sin(transformState[index].angle),
+      rotation: (index: number) =>
+        (transformState[index].angle * 180) / Math.PI + 90,
       duration: 1.5,
-      ease: 'power4.inOut',
+      stagger: 0.1, // Add stagger to ensure visibility
+      ease: "power4.inOut",
       onComplete: () => {
         gsap.to(clickToView, {
           opacity: 1,
           duration: 0.5,
-          ease: 'power2.out',
+          ease: "power2.out",
         });
+        const scrollTl = gsap.timeline({
+          scrollTrigger: {
+            trigger: ".container2",
+            pin: true,
+            pinSpacing: config.isMobile ? false : true,
+            start: config.isMobile ? "top top" : "1% top",
+            end: config.isMobile ? "+=50%" : "+=1000",
+            scrub: 2,
+            // markers: true,
+            onEnter: () => {
+              isScrolling = true;
+              gsap.to(clickToView, { opacity: 0, duration: 0.3, ease: "power1.out" }); // Hide on scroll
+              // Reset transformState and parallaxState
+              transformState.forEach((state) => {
+                state.currentRotation = 0;
+                state.targetRotation = 0;
+                state.currentScale = 1;
+                state.targetScale = 1;
+                state.currentX = 0;
+                state.targetX = 0;
+                state.currentY = 0;
+                state.targetY = 0;
+              });
+              Object.assign(parallaxState, {
+                targetX: 0,
+                targetY: 0,
+                targetZ: 0,
+                currentX: 0,
+                currentY: 0,
+                currentZ: 0,
+              });
+              gsap.set(galleryContainer, { rotateX: 0, rotateY: 0, rotation: 0 });
+              cards.forEach((card) => gsap.set(card, { rotationY: 0, scale: 1 }));
+            },
+            onLeaveBack: () => {
+              isScrolling = false;
+              gsap.to(clickToView, { opacity: 1, duration: 0.3, ease: "power1.out" }); // Show on return
+            },
+            onUpdate: (self) => {
+              if (self.progress === 0 && !isScrolling) {
+                gsap.to(clickToView, { opacity: 1, duration: 0.3, ease: "power1.out" }); // Ensure visible at top
+              }
+            },
+          },
+        });
+
+        scrollTl.to(
+          galleryContainer,
+          {
+            scale: config.isMobile ? 10 : 4,
+            y: config.isMobile ? "200%" : "120%",
+          }
+        );
+
+        scrollTl.to(
+          gallery,
+          {
+            rotate: config.isMobile ? 350 : 353,
+          },
+          0
+        );
       },
     });
 
     function togglePreview(index: number): void {
+      if (isScrolling) return;
       isTransitioning = true;
 
       const angle = transformState[index].angle;
-      const targetPosition = (Math.PI * 3) / 2; // 270 degrees (center position)
+      const targetPosition = (Math.PI * 3) / 2;
       let rotationRadians = targetPosition - angle;
 
-      // Normalize rotation to the shortest path
       if (rotationRadians > Math.PI) rotationRadians -= Math.PI * 2;
       else if (rotationRadians < -Math.PI) rotationRadians += Math.PI * 2;
 
@@ -209,24 +299,22 @@ const CircularImagesAnimation: React.FC = () => {
         state.currentX = state.targetX = state.currentY = state.targetY = 0;
       });
 
-      // If already in preview mode, just rotate to new card with minimal rotation
       if (isPreviewActive) {
-        const currentRotation = gsap.getProperty(gallery, 'rotation') as number || 0;
+        const currentRotation = (gsap.getProperty(gallery, "rotation") as number) || 0;
         const newRotation = currentRotation + (rotationRadians * 180) / Math.PI;
         gsap.to(gallery, {
           rotation: newRotation,
           duration: 1.25,
-          ease: 'power4.inOut',
-          onComplete: (): any => (isTransitioning = false),
+          ease: "power4.inOut",
+          onComplete: () : any => (isTransitioning = false),
         });
       } else {
-        // First time entering preview mode
         isPreviewActive = true;
         gsap.to(clickToView, {
           opacity: 0,
           y: 50,
           duration: 0.5,
-          ease: 'power2.out',
+          ease: "power2.out",
         });
 
         gsap.to(gallery, {
@@ -238,7 +326,7 @@ const CircularImagesAnimation: React.FC = () => {
                 rotationY: 0,
                 scale: 1,
                 duration: 1.25,
-                ease: 'power4.out',
+                ease: "power4.out",
               });
             });
           },
@@ -246,7 +334,7 @@ const CircularImagesAnimation: React.FC = () => {
           y: 1300,
           rotation: (rotationRadians * 180) / Math.PI,
           duration: 2,
-          ease: 'power4.inOut',
+          ease: "power4.inOut",
           onComplete: () : any => (isTransitioning = false),
         });
       }
@@ -256,86 +344,79 @@ const CircularImagesAnimation: React.FC = () => {
         currentY: 0,
         currentZ: 0,
         duration: 0.5,
-        ease: 'power2.out',
+        ease: "power2.out",
         onUpdate: () => {
           gsap.set(galleryContainer, {
             rotateX: parallaxState.currentX,
             rotateY: parallaxState.currentY,
             rotation: parallaxState.currentZ,
-            transformOrigin: 'center center',
+            transformOrigin: "center center",
           });
         },
       });
 
-      // Update title
       if (currentTitle) {
-        const words = currentTitle.querySelectorAll('.word');
+        const words = currentTitle.querySelectorAll(".word");
         gsap.to(words, {
-          y: '-125%',
+          y: "-125%",
           duration: 0.5,
           stagger: 0.05,
-          ease: 'power4.out',
+          ease: "power4.out",
           onComplete: () => {
             currentTitle?.remove();
             currentTitle = null;
             const titleText = cards[index].dataset.title;
-            const p = document.createElement('p');
-            p.textContent = titleText || '';
+            const p = document.createElement("p");
+            p.textContent = titleText || "";
             titleContainer!.appendChild(p);
             currentTitle = p;
 
-            const splitText = new SplitText(p, {
-              type: 'words',
-              wordsClass: 'word',
-            });
+            const splitText = new SplitText(p, { type: "words", wordsClass: "word" });
             const words = splitText.words;
 
-            gsap.set(words, { y: '125%' });
+            gsap.set(words, { y: "125%" });
             gsap.to(words, {
-              y: '0%',
+              y: "0%",
               duration: 0.75,
               stagger: 0.1,
-              ease: 'power4.out',
+              ease: "power4.out",
             });
           },
         });
       } else {
         const titleText = cards[index].dataset.title;
-        const p = document.createElement('p');
-        p.textContent = titleText || '';
+        const p = document.createElement("p");
+        p.textContent = titleText || "";
         titleContainer!.appendChild(p);
         currentTitle = p;
 
-        const splitText = new SplitText(p, {
-          type: 'words',
-          wordsClass: 'word',
-        });
+        const splitText = new SplitText(p, { type: "words", wordsClass: "word" });
         const words = splitText.words;
 
-        gsap.set(words, { y: '125%' });
+        gsap.set(words, { y: "125%" });
         gsap.to(words, {
-          y: '0%',
+          y: "0%",
           duration: 0.75,
           delay: isPreviewActive ? 0 : 1.25,
           stagger: 0.1,
-          ease: 'power4.out',
+          ease: "power4.out",
         });
       }
     }
 
     function resetGallery(): void {
-      if (isTransitioning) return;
+      if (isTransitioning || isScrolling) return;
 
       isTransitioning = true;
 
       if (currentTitle) {
-        const words = currentTitle.querySelectorAll('.word');
+        const words = currentTitle.querySelectorAll(".word");
         gsap.to(words, {
-          y: '-125%',
+          y: "-125%",
           duration: 0.75,
           delay: 0.5,
           stagger: 0.1,
-          ease: 'power4.out',
+          ease: "power4.out",
           onComplete: () => {
             currentTitle?.remove();
             currentTitle = null;
@@ -358,7 +439,7 @@ const CircularImagesAnimation: React.FC = () => {
         x: 0,
         rotation: 0,
         duration: 2.5,
-        ease: 'power4.inOut',
+        ease: "power4.inOut",
         onComplete: () => {
           isPreviewActive = isTransitioning = false;
           Object.assign(parallaxState, {
@@ -373,7 +454,7 @@ const CircularImagesAnimation: React.FC = () => {
             opacity: 1,
             y: 0,
             duration: 0.5,
-            ease: 'power2.out',
+            ease: "power2.out",
           });
         },
       });
@@ -381,7 +462,11 @@ const CircularImagesAnimation: React.FC = () => {
 
     function handleResize(): void {
       const viewportWidth = window.innerWidth;
-      config.isMobile = viewportWidth < 1000;
+      setConfig((prev) => ({
+        ...prev,
+        isMobile: viewportWidth < 1000,
+        radius: viewportWidth < 1000 ? 150 : 275,
+      }));
 
       let galleryScale = 1;
 
@@ -417,7 +502,7 @@ const CircularImagesAnimation: React.FC = () => {
     }
 
     function handleMouseMove(e: MouseEvent): void {
-      if (isPreviewActive || isTransitioning || config.isMobile) return;
+      if (isPreviewActive || isTransitioning || config.isMobile || isScrolling) return;
 
       const centerX = window.innerWidth / 2;
       const centerY = window.innerHeight / 2;
@@ -454,9 +539,11 @@ const CircularImagesAnimation: React.FC = () => {
 
     function handleMouseOut(e: MouseEvent): void {
       if (
-        (e.relatedTarget === null || (e.relatedTarget as Node).nodeName === 'HTML') &&
+        (e.relatedTarget === null ||
+          (e.relatedTarget as Node).nodeName === "HTML") &&
         !isPreviewActive &&
-        !isTransitioning
+        !isTransitioning &&
+        !isScrolling
       ) {
         transformState.forEach((state) => {
           state.targetRotation = 0;
@@ -472,80 +559,104 @@ const CircularImagesAnimation: React.FC = () => {
 
     function animate(): void {
       if (!isPreviewActive && !isTransitioning) {
-        parallaxState.currentX +=
-          (parallaxState.targetX - parallaxState.currentX) * config.lerpFactor;
-        parallaxState.currentY +=
-          (parallaxState.targetY - parallaxState.currentY) * config.lerpFactor;
-        parallaxState.currentZ +=
-          (parallaxState.targetZ - parallaxState.currentZ) * config.lerpFactor;
+        if (!isScrolling) {
+          parallaxState.currentX += (parallaxState.targetX - parallaxState.currentX) * config.lerpFactor;
+          parallaxState.currentY += (parallaxState.targetY - parallaxState.currentY) * config.lerpFactor;
+          parallaxState.currentZ += (parallaxState.targetZ - parallaxState.currentZ) * config.lerpFactor;
+
+          cards.forEach((card, index) => {
+            const state = transformState[index];
+            state.currentRotation += (state.targetRotation - state.currentRotation) * config.lerpFactor;
+            state.currentScale += (state.targetScale - state.currentScale) * config.lerpFactor;
+            state.currentX += (state.targetX - state.currentX) * config.lerpFactor;
+            state.currentY += (state.targetY - state.currentY) * config.lerpFactor;
+
+            const angle = state.angle;
+            const x = config.radius * Math.cos(angle);
+            const y = config.radius * Math.sin(angle);
+
+            gsap.set(card, {
+              x: x + state.currentX,
+              y: y + state.currentY,
+              rotationY: state.currentRotation,
+              scale: state.currentScale,
+              rotation: (angle * 180) / Math.PI + 90,
+              transformOrigin: "center center",
+              transformPerspective: config.isMobile ? 500 : 800,
+            });
+          });
+        } else {
+          // Maintain reset state during scroll
+          gsap.set(galleryContainer, {
+            rotateX: 0,
+            rotateY: 0,
+            rotation: 0,
+            transformOrigin: "center center",
+          });
+          cards.forEach((card, index) => {
+            const state = transformState[index];
+            const angle = state.angle;
+            const x = config.radius * Math.cos(angle);
+            const y = config.radius * Math.sin(angle);
+            gsap.set(card, {
+              x: x,
+              y: y,
+              rotationY: 0,
+              scale: 1,
+              rotation: (angle * 180) / Math.PI + 90,
+              transformOrigin: "center center",
+              transformPerspective: config.isMobile ? 500 : 800,
+            });
+          });
+        }
 
         gsap.set(galleryContainer, {
           rotateX: parallaxState.currentX,
           rotateY: parallaxState.currentY,
           rotation: parallaxState.currentZ,
-          transformOrigin: 'center center',
-        });
-
-        cards.forEach((card, index) => {
-          const state = transformState[index];
-
-          state.currentRotation +=
-            (state.targetRotation - state.currentRotation) * config.lerpFactor;
-          state.currentScale +=
-            (state.targetScale - state.currentScale) * config.lerpFactor;
-          state.currentX += (state.targetX - state.currentX) * config.lerpFactor;
-          state.currentY += (state.targetY - state.currentY) * config.lerpFactor;
-
-          const angle = state.angle;
-          const x = config.radius * Math.cos(angle);
-          const y = config.radius * Math.sin(angle);
-
-          gsap.set(card, {
-            x: x + state.currentX,
-            y: y + state.currentY,
-            rotationY: state.currentRotation,
-            scale: state.currentScale,
-            rotation: (angle * 180) / Math.PI + 90,
-            transformOrigin: 'center center',
-            transformPerspective: 1000,
-          });
+          transformOrigin: "center center",
         });
       }
       requestAnimationFrame(animate);
     }
 
     // Add event listeners
-    window.addEventListener('resize', handleResize);
-    document.addEventListener('click', () => {
-      if (isPreviewActive && !isTransitioning) resetGallery();
+    window.addEventListener("resize", handleResize);
+    document.addEventListener("click", () => {
+      if (isPreviewActive && !isTransitioning && !isScrolling) resetGallery();
     });
-    document.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isPreviewActive && !isTransitioning) resetGallery();
+    document.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isPreviewActive && !isTransitioning && !isScrolling)
+        resetGallery();
     });
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseout', handleMouseOut);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseout", handleMouseOut);
 
     // Initial setup
     handleResize();
 
     // Cleanup on unmount
     return () => {
-      window.removeEventListener('resize', handleResize);
-      document.removeEventListener('click', () => {});
-      document.removeEventListener('keydown', () => {});
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseout', handleMouseOut);
+      window.removeEventListener("resize", handleResize);
+      document.removeEventListener("click", () => {});
+      document.removeEventListener("keydown", () => {});
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseout", handleMouseOut);
       cards.forEach((card) => {
-        card.removeEventListener('click', () => {});
+        card.removeEventListener("click", () => {});
       });
+      ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
     };
   }, []);
 
   return (
-    <div className="container2 flex items-center justify-center min-h-screen relative">
+    <div className="container2 flex items-center justify-center min-h-screen relative" style={{ height: config.isMobile ? "100dvh" : "auto" }}>
       <div className="gallery-container" ref={galleryContainerRef}>
         <div className="gallery" ref={galleryRef}></div>
-        <div className="click-to-view absolute text-center opacity-0" ref={clickToViewRef}>
+        <div
+          className="click-to-view absolute text-center opacity-0"
+          ref={clickToViewRef}
+        >
           Click to View
         </div>
       </div>
