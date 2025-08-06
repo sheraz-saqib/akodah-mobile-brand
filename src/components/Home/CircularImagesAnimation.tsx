@@ -82,17 +82,20 @@ const CircularImagesAnimation: React.FC = () => {
       setConfig((prev) => ({
         ...prev,
         isMobile: window.innerWidth < 1000,
-        radius: window.innerWidth < 1000 ? 150 : 275, // Ensure 275 for desktop
+        radius: window.innerWidth < 1000 ? 150 : 275,
       }));
     };
     window.addEventListener("resize", handleResize);
-    handleResize(); // Initial call
+    handleResize();
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   useGSAP(() => {
     gsap.registerPlugin(SplitText);
     gsap.registerPlugin(ScrollTrigger);
+
+    // Set overflow-x to hidden globally
+    document.body.style.overflowX = "hidden";
 
     const gallery = galleryRef.current;
     const galleryContainer = galleryContainerRef.current;
@@ -103,11 +106,13 @@ const CircularImagesAnimation: React.FC = () => {
 
     const cards: HTMLDivElement[] = [];
     const transformState: TransformState[] = [];
+    const scrollTriggers: ScrollTrigger[] = [];
 
     let currentTitle: HTMLParagraphElement | null = null;
     let isPreviewActive: boolean = false;
     let isTransitioning: boolean = false;
-    let isScrolling: boolean = false; // Flag to track scrolling state
+    let isScrolling: boolean = false;
+    let lastRotation: number = 0; // Store the last rotation applied in togglePreview
 
     const parallaxState: ParallaxState = {
       targetX: 0,
@@ -133,10 +138,9 @@ const CircularImagesAnimation: React.FC = () => {
 
       const img = document.createElement("img");
       img.src = collection[cardIndex].img;
-      img.onload = () => gsap.set(card, { opacity: 1 }); // Ensure image loads before showing
+      img.onload = () => gsap.set(card, { opacity: 1 });
       card.appendChild(img);
 
-      // Limit random positioning within viewport
       const maxX = config.isMobile ? window.innerWidth / 2 : window.innerWidth / 2;
       const maxY = config.isMobile ? window.innerHeight / 2 : window.innerHeight / 2;
 
@@ -145,7 +149,7 @@ const CircularImagesAnimation: React.FC = () => {
         y: gsap.utils.random(-maxY, maxY),
         rotation: gsap.utils.random(0, 360),
         scale: 0.5,
-        opacity: 0, // Start hidden until image loads
+        opacity: 0,
         transformPerspective: config.isMobile ? 500 : 800,
         transformOrigin: "center center",
       });
@@ -210,7 +214,7 @@ const CircularImagesAnimation: React.FC = () => {
       rotation: (index: number) =>
         (transformState[index].angle * 180) / Math.PI + 90,
       duration: 1.5,
-      stagger: 0.1, // Add stagger to ensure visibility
+      stagger: 0.1,
       ease: "power4.inOut",
       onComplete: () => {
         gsap.to(clickToView, {
@@ -226,11 +230,9 @@ const CircularImagesAnimation: React.FC = () => {
             start: config.isMobile ? "top top" : "1% top",
             end: config.isMobile ? "+=50%" : "+=1000",
             scrub: 2,
-            // markers: true,
             onEnter: () => {
               isScrolling = true;
-              gsap.to(clickToView, { opacity: 0, duration: 0.3, ease: "power1.out" }); // Hide on scroll
-              // Reset transformState and parallaxState
+              gsap.to(clickToView, { opacity: 0, duration: 0.3, ease: "power1.out" });
               transformState.forEach((state) => {
                 state.currentRotation = 0;
                 state.targetRotation = 0;
@@ -254,11 +256,11 @@ const CircularImagesAnimation: React.FC = () => {
             },
             onLeaveBack: () => {
               isScrolling = false;
-              gsap.to(clickToView, { opacity: 1, duration: 0.3, ease: "power1.out" }); // Show on return
+              gsap.to(clickToView, { opacity: 1, duration: 0.3, ease: "power1.out" });
             },
             onUpdate: (self) => {
               if (self.progress === 0 && !isScrolling) {
-                gsap.to(clickToView, { opacity: 1, duration: 0.3, ease: "power1.out" }); // Ensure visible at top
+                gsap.to(clickToView, { opacity: 1, duration: 0.3, ease: "power1.out" });
               }
             },
           },
@@ -279,6 +281,9 @@ const CircularImagesAnimation: React.FC = () => {
           },
           0
         );
+
+        // Store the ScrollTrigger instance
+        scrollTriggers.push(scrollTl.scrollTrigger!);
       },
     });
 
@@ -286,12 +291,19 @@ const CircularImagesAnimation: React.FC = () => {
       if (isScrolling) return;
       isTransitioning = true;
 
+      // Disable all ScrollTriggers and vertical body scroll
+      scrollTriggers.forEach((trigger) => trigger.disable());
+      document.body.style.overflowY = "hidden"; // Disable vertical scroll
+
       const angle = transformState[index].angle;
       const targetPosition = (Math.PI * 3) / 2;
       let rotationRadians = targetPosition - angle;
 
       if (rotationRadians > Math.PI) rotationRadians -= Math.PI * 2;
       else if (rotationRadians < -Math.PI) rotationRadians += Math.PI * 2;
+
+      // Store the rotation applied
+      lastRotation = (rotationRadians * 180) / Math.PI;
 
       transformState.forEach((state) => {
         state.currentRotation = state.targetRotation = 0;
@@ -306,7 +318,10 @@ const CircularImagesAnimation: React.FC = () => {
           rotation: newRotation,
           duration: 1.25,
           ease: "power4.inOut",
-          onComplete: () : any => (isTransitioning = false),
+          onComplete: () => {
+            lastRotation = newRotation; // Update lastRotation for subsequent toggles
+            isTransitioning = false;
+          },
         });
       } else {
         isPreviewActive = true;
@@ -332,10 +347,12 @@ const CircularImagesAnimation: React.FC = () => {
           },
           scale: 5,
           y: 1300,
-          rotation: (rotationRadians * 180) / Math.PI,
+          rotation: lastRotation,
           duration: 2,
           ease: "power4.inOut",
-          onComplete: () : any => (isTransitioning = false),
+          onComplete: () => {
+            isTransitioning = false;
+          },
         });
       }
 
@@ -409,6 +426,10 @@ const CircularImagesAnimation: React.FC = () => {
 
       isTransitioning = true;
 
+      // Re-enable all ScrollTriggers and restore vertical body scroll
+      scrollTriggers.forEach((trigger) => trigger.enable());
+      document.body.style.overflowY = "auto"; // Restore vertical scroll
+
       if (currentTitle) {
         const words = currentTitle.querySelectorAll(".word");
         gsap.to(words, {
@@ -437,11 +458,12 @@ const CircularImagesAnimation: React.FC = () => {
         scale: galleryScale,
         y: 0,
         x: 0,
-        rotation: 0,
+        rotation: 0, // Animate back to 0 from current rotation
         duration: 2.5,
         ease: "power4.inOut",
         onComplete: () => {
           isPreviewActive = isTransitioning = false;
+          lastRotation = 0; // Reset lastRotation
           Object.assign(parallaxState, {
             targetX: 0,
             targetY: 0,
@@ -586,7 +608,6 @@ const CircularImagesAnimation: React.FC = () => {
             });
           });
         } else {
-          // Maintain reset state during scroll
           gsap.set(galleryContainer, {
             rotateX: 0,
             rotateY: 0,
@@ -646,6 +667,8 @@ const CircularImagesAnimation: React.FC = () => {
         card.removeEventListener("click", () => {});
       });
       ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
+      document.body.style.overflowX = "hidden"; // Ensure overflow-x remains hidden
+      document.body.style.overflowY = "auto"; // Restore vertical scroll on unmount
     };
   }, []);
 
